@@ -196,14 +196,14 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
             CREATE SCHEMA IF NOT EXISTS ${final_namespace}
             OPTIONS(location="${dataset_location}");
 
-            CREATE ${force_create_table} TABLE ${final_table_id} (
+            /*CREATE ${force_create_table} TABLE ${final_table_id} (
               _airbyte_raw_id STRING NOT NULL,
               _airbyte_extracted_at TIMESTAMP NOT NULL,
               _airbyte_meta JSON NOT NULL,
             ${column_declarations}
             )
             PARTITION BY (DATE_TRUNC(_airbyte_extracted_at, DAY))
-            CLUSTER BY ${cluster_config};
+            CLUSTER BY ${cluster_config};*/
             """);
   }
 
@@ -325,7 +325,8 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
     final String clearLoadedAt = clearLoadedAt(stream.id());
     final String rebuildInTempTable = updateTable(stream, SOFT_RESET_SUFFIX, false);
     final String overwriteFinalTable = overwriteFinalTable(stream.id(), SOFT_RESET_SUFFIX);
-    return String.join("\n", createTempTable, clearLoadedAt, rebuildInTempTable, overwriteFinalTable);
+    //return String.join("\n", createTempTable, clearLoadedAt, rebuildInTempTable, overwriteFinalTable);
+    return "";
   }
 
   private String clearLoadedAt(final StreamId streamId) {
@@ -347,17 +348,22 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
       pkVarDeclaration = "DECLARE missing_pk_count INT64;";
       validatePrimaryKeys = validatePrimaryKeys(stream.id(), stream.primaryKey(), stream.columns());
     }
-    final String insertNewRecords = insertNewRecords(stream, finalSuffix, stream.columns());
+    // final String insertNewRecords = insertNewRecords(stream, finalSuffix, stream.columns());
+    final String insertNewRecords = "";
     String dedupFinalTable = "";
     String cdcDeletes = "";
     String dedupRawTable = "";
+    /*
     if (stream.destinationSyncMode() == DestinationSyncMode.APPEND_DEDUP) {
       dedupRawTable = dedupRawTable(stream.id(), finalSuffix);
       // If we're in dedup mode, then we must have a cursor
       dedupFinalTable = dedupFinalTable(stream.id(), finalSuffix, stream.primaryKey(), stream.cursor());
       cdcDeletes = cdcDeletes(stream, finalSuffix, stream.columns());
     }
+    */
     final String commitRawTable = commitRawTable(stream.id());
+
+    final String dropFinalTable = dropFinalTable(stream.id());
 
     return new StringSubstitutor(Map.of(
         "pk_var_declaration", pkVarDeclaration,
@@ -366,7 +372,8 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
         "dedup_final_table", dedupFinalTable,
         "cdc_deletes", cdcDeletes,
         "dedupe_raw_table", dedupRawTable,
-        "commit_raw_table", commitRawTable)).replace(
+        "commit_raw_table", commitRawTable,
+        "dropFinalTable", dropFinalTable)).replace(
             """
             ${pk_var_declaration}
 
@@ -385,6 +392,17 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
             ${commit_raw_table}
 
             COMMIT TRANSACTION;
+
+            ${dropFinalTable}
+            """);
+  }
+
+  @VisibleForTesting
+  String dropFinalTable(final StreamId id) {
+    return new StringSubstitutor(Map.of(
+        "final_table_id", id.finalTableId(QUOTE))).replace(
+            """
+            DROP TABLE IF EXISTS ${final_table_id};
             """);
   }
 
@@ -572,8 +590,10 @@ public class BigQuerySqlGenerator implements SqlGenerator<TableDefinition> {
         "raw_table_id", id.rawTableId(QUOTE))).replace(
             """
             UPDATE ${raw_table_id}
-            SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
-            WHERE `_airbyte_loaded_at` IS NULL
+            /* SET `_airbyte_loaded_at` = CURRENT_TIMESTAMP()
+            WHERE `_airbyte_loaded_at` IS NULL*/
+            SET `_airbyte_loaded_at` = NULL
+            WHERE `_airbyte_loaded_at` IS NOT NULL
             ;""");
   }
 
